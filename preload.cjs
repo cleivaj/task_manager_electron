@@ -1,6 +1,6 @@
 "use strict";
 
-// Preload (mundo aislado): expone `window.desktop` a la app y inyecta el shim
+// Preload (mundo aislado): expone `window.desktop` a la app e inyecta el shim
 // en el MAIN WORLD de la página — porque el bus realtime de Kova (kova:realtime)
 // despacha CustomEvents en el `window` del main world, no del aislado.
 
@@ -44,19 +44,37 @@ const NOTIFICATION_LABELS = {
     CALL_INVITED: "invited you to a video call",
 };
 
-// Shim inyectado en el main world: escucha el bus realtime de la app (el mismo
-// stream SSE que la web ya mantiene abierto, /notification/stream) y traduce
-// cada evento NOTIFICATION en una notificación nativa del SO.
-//   • Notifica SIEMPRE (aplicaciones de escritorio nativas como Teams/WhatsApp
-//     notifican aunque la ventana esté enfocada; la duplicación con el bell
-//     in-app es el comportamiento normal). Solo se excluye la ventana de
-//     llamada (window.opener).
+// Shim inyectado en el main world. Traduce en notificaciones nativas del SO:
+//   1. El bus realtime de la app (kova:realtime, alimentado por el stream SSE
+//      /notification/stream que la web mantiene abierto).
+//   2. Un POLL FALLBACK a /notification/latest (auth por query token, misma
+//      ruta que /stream): si el stream SSE de la app muere (horas en tray,
+//      token, red), las notificaciones SIGUEN llegando al centro del SO.
+//      El token/workspace/api se leen de la pushSession en IndexedDB (la misma
+//      que usa el service worker). Dedupe compartido: nada tosta dos veces.
+//   • Notifica SIEMPRE (apps de escritorio nativas como Teams/WhatsApp notifican
+//     aunque la ventana esté enfocada). Solo se excluye la ventana de llamada
+//     (window.opener).
 const SHIM = `(() => {
     const LABELS = ${JSON.stringify(NOTIFICATION_LABELS)};
-    window.addEventListener("kova:realtime", (e) => {
-        const detail = e && e.detail;
+    const POLL_MS = 45000;        // cadencia del poll fallback
+    const FIRST_POLL_DELAY_MS = 5000;
+    const RECENT_WINDOW_MS = 120000; // solo tosta lo creado en los últimos 2 min
+    const MAX_SEEN = 600;
+    const seen = new Set();
+
+    function remember(id) {
+        seen.add(id);
+        if (seen.size > MAX_SEEN) seen.clear(); // cota de memoria; la ventana de 2 min evita re-toasts
+    }
+
+    // --- Camino 1: bus realtime (SSE de la app) ---
+    function fromBus(detail) {
         if (!detail || detail.type !== "NOTIFICATION") return;
         if (window.opener) return;
+        const id = detail.notificationId || "";
+        if (!id || seen.has(id)) return;
+        remember(id);
         const type = detail.notificationType || "";
         const label = LABELS[type] || "you have a new notification";
         const actor = detail.data && typeof detail.data.actorName === "string"
@@ -66,9 +84,77 @@ const SHIM = `(() => {
             ? actor + " " + label
             : label.charAt(0).toUpperCase() + label.slice(1);
         if (window.desktop && typeof window.desktop.notify === "function") {
-            window.desktop.notify({ title: "Kova", body, tag: detail.notificationId || type });
+            window.desktop.notify({ title: "Kova", body });
         }
+    }
+
+    window.addEventListener("kova:realtime", (e) => {
+        const detail = e && e.detail;
+        if (detail && detail.type === "NOTIFICATION") fromBus(detail);
     });
+
+    // --- Camino 2: poll fallback a /notification/latest ---
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open("kova_push_session", 1);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains("sessions")) db.createObjectStore("sessions");
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function readSession() {
+        try {
+            const db = await openDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction("sessions", "readonly");
+                const get = tx.objectStore("sessions").get("current");
+                get.onsuccess = () => resolve(get.result || null);
+                get.onerror = () => reject(get.error);
+            });
+        } catch {
+            return null;
+        }
+    }
+
+    async function pollLatest() {
+        if (window.opener || !window.desktop) return;
+        const session = await readSession();
+        const token = session && session.notificationToken;
+        const workspaceId = session && session.workspaceId;
+        const apiUrl = session && session.apiUrl;
+        if (!token || !workspaceId || !apiUrl) return;
+
+        try {
+            const url = apiUrl + "/notification/latest"
+                + "?token=" + encodeURIComponent(token)
+                + "&workspaceId=" + encodeURIComponent(workspaceId);
+            const res = await fetch(url);
+            if (!res.ok) return;
+            const json = await res.json();
+            const items = (json && json.payload && json.payload.notifications) || [];
+            const cutoff = Date.now() - RECENT_WINDOW_MS;
+            for (const n of items) {
+                if (!n || !n.id || seen.has(n.id)) continue;
+                const created = n.createdAt ? new Date(n.createdAt).getTime() : NaN;
+                if (Number.isNaN(created) || created < cutoff) continue;
+                remember(n.id);
+                if (window.desktop && typeof window.desktop.notify === "function") {
+                    window.desktop.notify({ title: n.title || "Kova", body: n.body || "" });
+                }
+            }
+        } catch {
+            // red/offline: el siguiente tick reintenta
+        }
+    }
+
+    setTimeout(() => {
+        pollLatest();
+        setInterval(pollLatest, POLL_MS);
+    }, FIRST_POLL_DELAY_MS);
 })();`;
 
 function injectShim() {

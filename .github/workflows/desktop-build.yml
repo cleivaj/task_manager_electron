@@ -1,0 +1,56 @@
+name: Desktop build
+
+# Builds the desktop installers on GitHub runners (public repo = free).
+#   • manual run:  Actions → "Desktop build" → Run workflow → download artifacts
+#   • tag push:    git tag v0.1.x && git push origin v0.1.x
+#                  → creates a GitHub Release with the installers attached
+#
+# The DMG can only be produced on macOS (hdiutil), so macOS builds happen on a
+# macos runner — nobody needs a Mac locally anymore.
+# This workflow lives at the ROOT of the desktop-only repo (.github/workflows/).
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # needed to create releases + attach assets
+
+jobs:
+  mac:
+    name: macOS (.dmg)
+    runs-on: macos-latest
+    env:
+      # Unsigned pilot build: never try to codesign on the runner.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build DMG (Intel + Apple Silicon)
+        run: npx electron-builder --mac --x64 --arm64
+
+      - name: Upload DMGs (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kova-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          draft: false
+          generate_release_notes: false

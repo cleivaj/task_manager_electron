@@ -54,6 +54,22 @@ npm run dist:win     # → dist/Kova Setup <version>.exe (needs Windows or wine)
 npm run dist:linux   # → dist/Kova-<version>.AppImage
 ```
 
+### Via GitHub Actions (no local Mac/Windows needed)
+
+The repo has `.github/workflows/desktop-build.yml` (free on a public repo):
+
+- **Manual**: GitHub → **Actions** → *Desktop build* → **Run workflow** → download
+  the `kova-dmg` artifact (contains Intel `x64` + Apple Silicon `arm64` DMGs).
+- **Tagged**: `git tag v0.1.x && git push origin v0.1.x` → a GitHub **Release**
+  is created with the DMGs attached.
+
+Builds are unsigned (pilot): testers open with right-click → **Open**, or
+`xattr -dr com.apple.quarantine /Applications/Kova.app` once per build.
+
+> A DMG can only be built on macOS (`hdiutil`), which is why the workflow uses a
+> `macos-latest` runner. The shell itself is pure JS — nothing platform-specific
+> in the code.
+
 ## Honest limitations (PoC)
 
 - **Not signed**: macOS Gatekeeper / Windows SmartScreen will warn until you add
