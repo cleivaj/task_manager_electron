@@ -37,6 +37,9 @@ function createAppWindow(url = APP_URL) {
         show: false,
         autoHideMenuBar: true,
         backgroundColor: "#0b0f14",
+        // Ícono de ventana (Linux/Windows; no macOS — el dock/DMG usa el .icns
+        // que electron-builder genera desde build/icon.png).
+        icon: path.join(__dirname, "build", "icon.png"),
         webPreferences: {
             preload: path.join(__dirname, "preload.cjs"),
             contextIsolation: true,
