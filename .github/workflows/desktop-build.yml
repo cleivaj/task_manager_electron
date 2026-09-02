@@ -1,9 +1,8 @@
 name: Desktop build
 
 # Builds the desktop installers on GitHub runners (public repo = free).
-#   • manual run:  Actions → "Desktop build" → Run workflow → download artifacts
-#   • tag push:    git tag v0.1.x && git push origin v0.1.x
-#                  → creates a GitHub Release with the installers attached
+#   • push to prod: every push to the `prod` branch builds the installers
+#   • manual run:   Actions → "Desktop build" → Run workflow → download artifacts
 #
 # The DMG can only be produced on macOS (hdiutil), so macOS builds happen on a
 # macos runner — nobody needs a Mac locally anymore.
@@ -12,11 +11,8 @@ name: Desktop build
 on:
   workflow_dispatch: {}
   push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write # needed to create releases + attach assets
+    branches:
+      - prod
 
 jobs:
   mac:
@@ -46,11 +42,3 @@ jobs:
           name: kova-dmg
           path: dist/*.dmg
           if-no-files-found: error
-
-      - name: Attach to GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.dmg
-          draft: false
-          generate_release_notes: false
