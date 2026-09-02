@@ -33,8 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # --publish never: CI detection triggers implicit publishing (which needs
+      # GH_TOKEN). We only want artifacts — never auto-publish.
       - name: Build DMG (Intel + Apple Silicon)
-        run: npx electron-builder --mac --x64 --arm64
+        run: npx electron-builder --mac --x64 --arm64 --publish never
 
       - name: Upload DMGs (artifact)
         uses: actions/upload-artifact@v4
