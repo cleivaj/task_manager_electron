@@ -47,14 +47,16 @@ const NOTIFICATION_LABELS = {
 // Shim inyectado en el main world: escucha el bus realtime de la app (el mismo
 // stream SSE que la web ya mantiene abierto, /notification/stream) y traduce
 // cada evento NOTIFICATION en una notificación nativa del SO.
-//   • Solo notifica cuando la app NO está enfocada (el sino in-app ya cubre el
-//     caso enfocado) y solo desde la ventana principal (no la de llamada).
+//   • Notifica SIEMPRE (aplicaciones de escritorio nativas como Teams/WhatsApp
+//     notifican aunque la ventana esté enfocada; la duplicación con el bell
+//     in-app es el comportamiento normal). Solo se excluye la ventana de
+//     llamada (window.opener).
 const SHIM = `(() => {
     const LABELS = ${JSON.stringify(NOTIFICATION_LABELS)};
     window.addEventListener("kova:realtime", (e) => {
         const detail = e && e.detail;
         if (!detail || detail.type !== "NOTIFICATION") return;
-        if (document.hasFocus() || window.opener) return;
+        if (window.opener) return;
         const type = detail.notificationType || "";
         const label = LABELS[type] || "you have a new notification";
         const actor = detail.data && typeof detail.data.actorName === "string"

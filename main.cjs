@@ -106,6 +106,12 @@ function createTray() {
             checked: Boolean(app.getLoginItemSettings().openAtLogin),
             click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
         },
+        // Diagnóstico rápido: verifica el camino SO (permisos/registro) sin
+        // depender de SSE ni del login. Útil para depurar en remoto.
+        {
+            label: "Test notification",
+            click: () => showNativeNotification({ title: "Kova", body: "Notifications are working on this device" }),
+        },
         { type: "separator" },
         { label: "Quit Kova", click: () => quitApp() },
     ]);
