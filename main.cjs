@@ -7,7 +7,7 @@
 //
 // La APP_URL se configura con KOVA_APP_URL (default: la instancia de producción).
 
-const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences, WebContents } = require("electron");
+const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences } = require("electron");
 const path = require("node:path");
 
 const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
@@ -151,11 +151,12 @@ function setupMediaPermissions() {
                     guarded({ video: s });
                 },
             }));
-            const wc = request.frame ? WebContents.fromFrame(request.frame) : undefined;
-            const win = wc ? BrowserWindow.fromWebContents(wc) : undefined;
             const menu = Menu.buildFromTemplate(template);
             menu.on("menu-will-close", () => setTimeout(() => guarded({}), 0));
-            menu.popup({ window: win });
+            // popup() sin anclar a ventana: aparece en el cursor. Anclar exigía
+            // WebContents.fromFrame, que no está exportado de forma fiable en el
+            // main process (undefined en Windows → crasheaba antes del menú).
+            menu.popup();
         } catch (err) {
             console.log(`[kova] display-media: error ${err?.message ?? err}`);
             finish({});
