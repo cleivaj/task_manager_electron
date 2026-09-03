@@ -15,7 +15,7 @@
 //   • Sin dependencias externas; falla silencioso (offline / rate-limit) y
 //     reintenta en el siguiente tick.
 
-const { app, net, shell, Notification } = require("electron");
+const { app, net, shell, Notification, nativeImage } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const stream = require("node:stream");
@@ -31,6 +31,22 @@ const NOTIFY_LABEL = "Kova";
 const dbg = (...args) => {
     if (!app.isPackaged) console.log("[kova-update]", ...args);
 };
+
+// Toast con el icono de la app y referencia persistente (ver showToast en
+// main.cjs: sin la referencia, Windows/macOS pueden no llegar a mostrarlo).
+let appIcon = undefined;
+let lastToast = null;
+function showToast(title, body, onClick) {
+    if (appIcon === undefined) {
+        const img = nativeImage.createFromPath(path.join(__dirname, "build", "icon.png"));
+        appIcon = img.isEmpty() ? null : img;
+    }
+    const n = new Notification({ title, body, icon: appIcon ?? undefined });
+    if (onClick) n.on("click", onClick);
+    lastToast = n;
+    n.show();
+    return n;
+}
 
 // Estado por sesión.
 let announcedVersion = null; // solo se anuncia UNA vez por versión
@@ -118,12 +134,11 @@ async function downloadAndOpen(info) {
 function announce(info) {
     if (announcedVersion === info.version) return;
     announcedVersion = info.version;
-    const n = new Notification({
-        title: `${NOTIFY_LABEL} ${info.version} is available`,
-        body: `You are on ${app.getVersion()}. Click to download and update.`,
-    });
-    n.on("click", () => { void downloadAndOpen(info); });
-    n.show();
+    showToast(
+        `${NOTIFY_LABEL} ${info.version} is available`,
+        `You are on ${app.getVersion()}. Click to download and update.`,
+        () => { void downloadAndOpen(info); },
+    );
 }
 
 // Comprueba contra GitHub y actualiza el estado + el menú del tray.
@@ -134,10 +149,7 @@ async function checkForUpdates({ manual = false } = {}) {
         if (!isNewer(info.version, current)) {
             dbg("up to date (", current, ")");
             if (manual) {
-                new Notification({
-                    title: NOTIFY_LABEL,
-                    body: `You are up to date (${current}).`,
-                }).show();
+                showToast(NOTIFY_LABEL, `You are up to date (${current}).`);
             }
             return;
         }

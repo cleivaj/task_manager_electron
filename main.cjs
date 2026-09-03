@@ -326,9 +326,8 @@ function setupUpdaters() {
         error: (m) => dbg("autoUpdater error:", m),
     };
     let manualPending = false;
-    const upToDate = () => {
-        new Notification({ title: "Kova", body: `You are up to date (${app.getVersion()}).` }).show();
-    };
+    let manualNotified = false; // evita doble toast (evento + resultado del check)
+    const upToDate = () => showToast("Kova", `You are up to date (${app.getVersion()}).`);
 
     autoUpdater.on("update-available", (info) => {
         const version = info?.version || "";
@@ -339,19 +338,20 @@ function setupUpdaters() {
     });
     autoUpdater.on("update-not-available", () => {
         dbg("auto-update: up to date");
-        if (manualPending) { manualPending = false; upToDate(); }
+        if (manualPending && !manualNotified) {
+            manualNotified = true;
+            manualPending = false;
+            upToDate();
+        }
     });
     autoUpdater.on("update-downloaded", (info) => {
         const version = info?.version || "";
         dbg("auto-update downloaded:", version);
         autoUpdateState = { version, phase: "ready" };
         if (tray) createTray();
-        const n = new Notification({
-            title: `Kova ${version} downloaded`,
-            body: "Click to restart and install the update.",
+        showToast(`Kova ${version} downloaded`, "Click to restart and install the update.", () => {
+            try { autoUpdater.quitAndInstall(); } catch { /* noop */ }
         });
-        n.on("click", () => { try { autoUpdater.quitAndInstall(); } catch { /* noop */ } });
-        n.show();
     });
     autoUpdater.on("error", (err) => {
         dbg("autoUpdater error:", err?.message ?? err);
@@ -361,21 +361,35 @@ function setupUpdaters() {
             autoUpdateState = null;
             if (tray) createTray();
         }
-        if (manualPending) {
+        if (manualPending && !manualNotified) {
+            manualNotified = true;
             manualPending = false;
-            new Notification({ title: "Kova", body: "Update check failed. Try again later." }).show();
+            showToast("Kova", "Update check failed. Try again later.");
         }
         // Error en check automático: no molesta, el siguiente reintenta.
     });
 
     manualCheck = async () => {
         manualPending = true;
+        manualNotified = false;
         try {
-            await autoUpdater.checkForUpdates();
+            const result = await autoUpdater.checkForUpdates();
+            if (result === null) { manualPending = false; return; } // updater inactivo (dev)
+            // La notificación normal sale por update-not-available; si el evento
+            // no dispara (Windows a veces no lo emite en re-checks manuales),
+            // usamos el resultado devuelto por checkForUpdates.
+            if (!result.isUpdateAvailable && manualPending && !manualNotified) {
+                manualNotified = true;
+                manualPending = false;
+                upToDate();
+            }
         } catch (err) {
             dbg("manual check failed:", err?.message ?? err);
+            if (manualPending && !manualNotified) {
+                manualNotified = true;
+                showToast("Kova", "Update check failed. Try again later.");
+            }
             manualPending = false;
-            upToDate();
         }
     };
     const check = () => autoUpdater.checkForUpdates().catch(() => {});
@@ -396,14 +410,35 @@ function quitApp() {
     app.quit();
 }
 
+// Ícono de la app para ventanas y notificaciones. Lazy: se carga la primera
+// vez que se necesita (dev: build/icon.png del repo; empaquetado: va dentro
+// del asar gracias a build.files). null = no disponible.
+let appIcon = undefined;
+function getAppIcon() {
+    if (appIcon === undefined) {
+        const img = nativeImage.createFromPath(path.join(__dirname, "build", "icon.png"));
+        appIcon = img.isEmpty() ? null : img;
+    }
+    return appIcon ?? undefined;
+}
+
+// Toast nativo. Se guarda una referencia persistente: sin ella, Windows/macOS
+// pueden recolectar el objeto antes de mostrarlo y el toast nunca aparece.
+let lastToast = null;
+function showToast(title, body, onClick) {
+    const n = new Notification({ title, body, icon: getAppIcon() });
+    if (onClick) n.on("click", onClick);
+    lastToast = n;
+    n.show();
+    return n;
+}
+
 // Notificación nativa desde el main process (el preload la pide vía IPC).
 function showNativeNotification({ title = "Kova", body = "", url } = {}) {
-    const n = new Notification({ title, body });
-    n.on("click", () => {
+    showToast(title, body, () => {
         showMainWindow();
         if (url && isAppUrl(url)) void mainWindow?.loadURL(url);
     });
-    n.show();
 }
 
 const gotLock = app.requestSingleInstanceLock();
