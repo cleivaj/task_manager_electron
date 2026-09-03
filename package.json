@@ -1,6 +1,6 @@
 {
   "name": "kova-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Kova desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {

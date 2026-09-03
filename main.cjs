@@ -51,7 +51,11 @@ function setupMediaPermissions() {
     // SO explícitamente (TCC) — sin askForMediaAccess, la cámara/mic quedan
     // denegados aunque la app lo conceda.
     ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-        if (!isAppUrl(details?.securityOrigin ?? "")) {
+        // Para `media` el details trae securityOrigin; para `display-capture` solo
+        // existe requestingUrl — si usáramos solo securityOrigin, la pantalla
+        // quedaría denegada en silencio (bug real: "nadie puede compartir").
+        const origin = details?.securityOrigin ?? details?.requestingUrl ?? "";
+        if (!isAppUrl(origin)) {
             callback(false);
             return;
         }
@@ -74,9 +78,11 @@ function setupMediaPermissions() {
             return;
         }
         if (permission === "mediaKeySystem" || permission === "fullscreen" || permission === "notifications" || permission === "display-capture") {
+            console.log(`[kova] granted permission: ${permission}`);
             callback(true);
             return;
         }
+        console.log(`[kova] denied permission: ${permission} (origin: ${origin})`);
         callback(false);
     });
 
