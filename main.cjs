@@ -101,20 +101,31 @@ function setupMediaPermissions() {
         };
         dbg("[display-media] REQUEST video=", request?.videoRequested, "audio=", request?.audioRequested, "from=", who());
         try {
-            // macOS: la captura de pantalla es un permiso TCC independiente (10.15+).
+            // macOS: Screen Recording es un permiso TCC independiente (10.15+) y NO
+            // se pide con askForMediaAccess (solo acepta camera/microphone). El prompt
+            // lo dispara la primera llamada a desktopCapturer.getSources(); el estado
+            // se consulta con getMediaAccessStatus("screen").
             if (process.platform === "darwin") {
                 const before = systemPreferences.getMediaAccessStatus("screen");
-                dbg("[display-media] mac TCC screen status BEFORE ask:", before);
-                const ok = await systemPreferences.askForMediaAccess("screen");
-                const after = systemPreferences.getMediaAccessStatus("screen");
-                dbg("[display-media] mac askForMediaAccess('screen') ->", ok, "| TCC status AFTER:", after);
-                if (!ok || after !== "granted") {
-                    dbg("[display-media] ABORT: sin permiso de grabación de pantalla en macOS");
+                dbg("[display-media] mac TCC screen status BEFORE:", before);
+                if (before === "denied" || before === "restricted") {
+                    dbg("[display-media] ABORT: Screen Recording denegado — activar en System Settings → Privacy & Security → Screen Recording y reiniciar la app");
                     grant({});
                     return;
                 }
             }
             const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+            if (process.platform === "darwin") {
+                const after = systemPreferences.getMediaAccessStatus("screen");
+                dbg("[display-media] mac TCC screen status AFTER getSources:", after);
+                // El primer getSources muestra el prompt del SO; si el user lo negó
+                // ahora, no conceder.
+                if (after === "denied" || after === "restricted") {
+                    dbg("[display-media] ABORT: user denied/restricted el prompt de Screen Recording");
+                    grant({});
+                    return;
+                }
+            }
             dbg("[display-media] sources found:", sources.length, "->", sources.map((s) => `${s.name} (${s.id})`).join(" | "));
             // 0 o 1 fuentes: nada que elegir → conceder (o cancelar) directo. Un
             // menú de un solo item bajo el cursor se cierra con el mouse-up del
