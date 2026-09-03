@@ -1,6 +1,6 @@
 {
   "name": "kova-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Kova desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
@@ -8,8 +8,8 @@
     "email": "web@cleiva.dev"
   },
   "allowScripts": {
-    "electron": true,
-    "electron-winstaller": true
+    "electron@37.10.3": true,
+    "electron-winstaller@5.4.0": true
   },
   "main": "main.cjs",
   "scripts": {
@@ -31,7 +31,9 @@
       "preload.cjs"
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.productivity",
       "extendInfo": {
         "NSCameraUsageDescription": "Kova uses your camera for video calls.",
@@ -39,14 +41,33 @@
       }
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "pacman"],
+      "target": [
+        "AppImage",
+        "pacman"
+      ],
       "category": "Office"
     },
     "pacman": {
-      "depends": ["c-ares", "ffmpeg", "gtk3", "libevent", "libvpx", "libxslt", "libxss", "minizip", "nss", "re2", "snappy", "libnotify", "libappindicator-gtk3"]
+      "depends": [
+        "c-ares",
+        "ffmpeg",
+        "gtk3",
+        "libevent",
+        "libvpx",
+        "libxslt",
+        "libxss",
+        "minizip",
+        "nss",
+        "re2",
+        "snappy",
+        "libnotify",
+        "libappindicator-gtk3"
+      ]
     }
   }
 }

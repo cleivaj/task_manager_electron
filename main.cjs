@@ -13,6 +13,20 @@ const path = require("node:path");
 const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
 
+// Linux/Wayland: compartir pantalla NO usa la vía X11 que sugiere el picker.
+// El stream real sale por PipeWire vía xdg-desktop-portal, y Chromium solo lo
+// usa si corre en Wayland nativo y con el capturador PipeWire activado. Sin
+// estos switches la fuente se elige, el menú se cierra… y nunca nace el stream
+// (síntoma exacto: "elijo y no comparte nada"). Debe ir antes de app.whenReady.
+if (process.platform === "linux") {
+    app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
+    // ozone-platform-hint=auto: prefiere Wayland nativo cuando WAYLAND_DISPLAY
+    // está presente (XWayland no puede capturar ventanas Wayland reales).
+    if (process.env.WAYLAND_DISPLAY) {
+        app.commandLine.appendSwitch("ozone-platform-hint", "auto");
+    }
+}
+
 let mainWindow = null;
 let tray = null;
 let trayIcon = null;
@@ -90,33 +104,61 @@ function setupMediaPermissions() {
     // picker nativo del SO; enumeramos fuentes con desktopCapturer y mostramos
     // un menú nativo para que el usuario elija qué compartir.
     ses.setDisplayMediaRequestHandler(async (request, callback) => {
+        // Electron LANZA TypeError si el request pide vídeo y el callback llega
+        // sin stream (cancelación / 0 fuentes) → lo absorbemos aquí; la web
+        // recibe el reject de getDisplayMedia y lo trata como cancelado.
+        const finish = (streams) => {
+            try {
+                callback(streams);
+            } catch (err) {
+                console.log(`[kova] display-media: request ended without stream (${err?.message ?? err})`);
+            }
+        };
         try {
             const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
             if (sources.length === 0) {
-                callback({});
+                finish({});
                 return;
             }
-            // El menú nativo no tiene evento "cancelar": si el usuario lo cierra
-            // sin elegir, menu-will-close dispara el callback con streams vacíos
-            // (getDisplayMedia rechaza → la web lo trata como cancelado). Un flag
-            // evita responder dos veces cuando SÍ eligió una fuente.
+            // Una única fuente (típico en Wayland: solo la pantalla) → compartir
+            // directo. Un menú de un solo item bajo el cursor es frágil: el
+            // mouse-up del click que abrió el menú lo cierra sin activar nada.
+            if (sources.length === 1) {
+                const s = sources[0];
+                console.log(`[kova] display-media: 1 source, granting "${s.name}" (${s.id})`);
+                finish({ video: s });
+                return;
+            }
+            // Menú nativo para elegir entre varias fuentes. Un flag evita
+            // responder dos veces; el click del item corre síncrono ANTES del
+            // cierre, así que la cancelación (escape/click fuera) se difiere un
+            // tick y nunca traga una elección real.
             let done = false;
-            const finish = (streams) => {
+            const guarded = (streams) => {
                 if (done) return;
                 done = true;
-                callback(streams);
+                finish(streams);
             };
+            console.log(`[kova] display-media: ${sources.length} sources available`);
             const template = sources.map((s) => ({
                 label: s.name,
-                click: () => finish({ video: { id: s.id, name: s.name } }),
+                click: () => {
+                    console.log(`[kova] display-media: picked "${s.name}" (${s.id})`);
+                    // Pasar el objeto DesktopCapturerSource COMPLETO (no solo
+                    // {id,name}): en Windows el capturador necesita campos como
+                    // display_id para resolver la pantalla/ventana real; un objeto
+                    // parcial concede el permiso pero el stream nunca nace.
+                    guarded({ video: s });
+                },
             }));
             const wc = request.frame ? WebContents.fromFrame(request.frame) : undefined;
             const win = wc ? BrowserWindow.fromWebContents(wc) : undefined;
             const menu = Menu.buildFromTemplate(template);
-            menu.on("menu-will-close", () => finish({}));
+            menu.on("menu-will-close", () => setTimeout(() => guarded({}), 0));
             menu.popup({ window: win });
-        } catch {
-            callback({});
+        } catch (err) {
+            console.log(`[kova] display-media: error ${err?.message ?? err}`);
+            finish({});
         }
     });
 }
