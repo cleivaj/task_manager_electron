@@ -7,8 +7,8 @@
 //
 // La APP_URL se configura con KOVA_APP_URL (default: la instancia de producción).
 
-const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell } = require("electron");
-const path = require("path");
+const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences, WebContents } = require("electron");
+const path = require("node:path");
 
 const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
@@ -28,6 +28,91 @@ function isAppUrl(url) {
     } catch {
         return false;
     }
+}
+
+// --- Permisos de media (cámara/mic/pantalla) ---
+//
+// En el navegador, getUserMedia dispara el prompt de Chromium y el propio
+// navegador ya trae los permisos del SO. En Electron NO hay prompt: el
+// renderer pregunta al main process vía session.setPermissionRequestHandler,
+// y si la app no concede, getUserMedia falla (en Windows en silencio; en macOS
+// ni siquiera llega si Info.plist no declara el uso de cámara/mic).
+// Concedemos SOLO lo que la app usa y solo para el origin de la app.
+function setupMediaPermissions() {
+    const ses = session.defaultSession;
+
+    // Comprobación síncrona (navigator.permissions.query, enumerateDevices…).
+    ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+        if (!isAppUrl(requestingOrigin)) return false;
+        return permission === "media" || permission === "mediaKeySystem";
+    });
+
+    // Petición asíncrona (getUserMedia). En macOS hay que pedir el acceso al
+    // SO explícitamente (TCC) — sin askForMediaAccess, la cámara/mic quedan
+    // denegados aunque la app lo conceda.
+    ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+        if (!isAppUrl(details?.securityOrigin ?? "")) {
+            callback(false);
+            return;
+        }
+        if (permission === "media") {
+            if (process.platform === "darwin") {
+                const mediaTypes = details?.mediaTypes ?? [];
+                const wantsCamera = mediaTypes.includes("video");
+                const wantsMic = mediaTypes.includes("audio");
+                const asks = [];
+                if (wantsCamera) asks.push(systemPreferences.askForMediaAccess("camera"));
+                if (wantsMic) asks.push(systemPreferences.askForMediaAccess("microphone"));
+                if (asks.length === 0) {
+                    callback(true);
+                    return;
+                }
+                Promise.all(asks).then((results) => callback(results.every(Boolean)));
+                return;
+            }
+            callback(true);
+            return;
+        }
+        if (permission === "mediaKeySystem" || permission === "fullscreen" || permission === "notifications") {
+            callback(true);
+            return;
+        }
+        callback(false);
+    });
+
+    // getDisplayMedia (compartir pantalla en la sala): en Electron no hay
+    // picker nativo del SO; enumeramos fuentes con desktopCapturer y mostramos
+    // un menú nativo para que el usuario elija qué compartir.
+    ses.setDisplayMediaRequestHandler(async (request, callback) => {
+        try {
+            const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+            if (sources.length === 0) {
+                callback({});
+                return;
+            }
+            // El menú nativo no tiene evento "cancelar": si el usuario lo cierra
+            // sin elegir, menu-will-close dispara el callback con streams vacíos
+            // (getDisplayMedia rechaza → la web lo trata como cancelado). Un flag
+            // evita responder dos veces cuando SÍ eligió una fuente.
+            let done = false;
+            const finish = (streams) => {
+                if (done) return;
+                done = true;
+                callback(streams);
+            };
+            const template = sources.map((s) => ({
+                label: s.name,
+                click: () => finish({ video: { id: s.id, name: s.name } }),
+            }));
+            const wc = request.frame ? WebContents.fromFrame(request.frame) : undefined;
+            const win = wc ? BrowserWindow.fromWebContents(wc) : undefined;
+            const menu = Menu.buildFromTemplate(template);
+            menu.on("menu-will-close", () => finish({}));
+            menu.popup({ window: win });
+        } catch {
+            callback({});
+        }
+    });
 }
 
 function createAppWindow(url = APP_URL) {
@@ -153,6 +238,9 @@ if (!gotLock) {
 
     app.whenReady().then(async () => {
         app.isQuitting = false;
+
+        // Cámara/mic/pantalla: sin esto getUserMedia falla en el shell.
+        setupMediaPermissions();
 
         trayIcon = await loadTrayIcon();
 

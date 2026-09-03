@@ -3,7 +3,10 @@
   "version": "0.1.1",
   "description": "Kova desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
-  "author": "We Are Materia",
+  "author": {
+    "name": "We Are Materia",
+    "email": "web@cleiva.dev"
+  },
   "allowScripts": {
     "electron": true,
     "electron-winstaller": true
@@ -29,14 +32,21 @@
     ],
     "mac": {
       "target": ["dmg"],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Kova uses your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Kova uses your microphone for video calls."
+      }
     },
     "win": {
       "target": ["nsis"]
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": ["AppImage", "pacman"],
       "category": "Office"
+    },
+    "pacman": {
+      "depends": ["c-ares", "ffmpeg", "gtk3", "libevent", "libvpx", "libxslt", "libxss", "minizip", "nss", "re2", "snappy", "libnotify", "libappindicator-gtk3"]
     }
   }
 }
