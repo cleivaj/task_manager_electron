@@ -1,6 +1,6 @@
 {
   "name": "kova-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Kova desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
@@ -52,7 +52,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "artifactName": "Kova-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [

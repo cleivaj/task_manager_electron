@@ -283,10 +283,15 @@ function createTray() {
         { type: "separator" },
         { label: "Quit Kova", click: () => quitApp() },
     );
-    tray = new Tray(trayIcon);
-    tray.setToolTip("Kova");
+    // El Tray se crea UNA sola vez; los cambios de estado solo reconstruyen el
+    // menú. En Windows, crear un Tray nuevo sin destruir el anterior deja
+    // iconos duplicados acumulándose en la bandeja.
+    if (!tray) {
+        tray = new Tray(trayIcon);
+        tray.setToolTip("Kova");
+        tray.on("click", () => showMainWindow());
+    }
     tray.setContextMenu(Menu.buildFromTemplate(template));
-    tray.on("click", () => showMainWindow());
 }
 
 // Auto-update por plataforma:
@@ -350,7 +355,16 @@ function setupUpdaters() {
     });
     autoUpdater.on("error", (err) => {
         dbg("autoUpdater error:", err?.message ?? err);
-        if (manualPending) { manualPending = false; upToDate(); }
+        // Un fallo de descarga (404, red…) no debe dejar el tray clavado en
+        // "Downloading…": restauramos el menú base para que se pueda reintentar.
+        if (autoUpdateState?.phase === "downloading") {
+            autoUpdateState = null;
+            if (tray) createTray();
+        }
+        if (manualPending) {
+            manualPending = false;
+            new Notification({ title: "Kova", body: "Update check failed. Try again later." }).show();
+        }
         // Error en check automático: no molesta, el siguiente reintenta.
     });
 
