@@ -1,12 +1,18 @@
 name: Desktop build
 
-# Builds the desktop installers on GitHub runners (public repo = free).
-#   • push to prod: every push to the `prod` branch builds the installers
-#   • manual run:   Actions → "Desktop build" → Run workflow → download artifacts
+# Builds the desktop installers on GitHub runners (public repo = free) and
+# publishes ONE GitHub Release per build — that Release is the update channel
+# the installed app polls (updater.cjs → /releases/latest). The app announces
+# "new version available" on every platform when this Release is newer than
+# the installed version.
+#   • push to prod:      every push to the `prod` branch builds + releases
+#   • manual run:        Actions → "Desktop build" → Run workflow
+#   • version:           taken from package.json "version" → tag v0.1.5, etc.
+#     Bump package.json per release so the updater sees a newer version.
 #
-# The DMG can only be produced on macOS (hdiutil), so macOS builds happen on a
-# macos runner — nobody needs a Mac locally anymore.
-# This workflow lives at the ROOT of the desktop-only repo (.github/workflows/).
+# DMG can only be produced on macOS (hdiutil) and NSIS on Windows, so each
+# platform builds on its own runner; a final job aggregates the artifacts
+# into the Release.
 
 on:
   workflow_dispatch: {}
@@ -33,14 +39,113 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # --publish never: CI detection triggers implicit publishing (which needs
-      # GH_TOKEN). We only want artifacts — never auto-publish.
       - name: Build DMG (Intel + Apple Silicon)
         run: npx electron-builder --mac --x64 --arm64 --publish never
 
       - name: Upload DMGs (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: kova-dmg
+          name: kova-mac
           path: dist/*.dmg
           if-no-files-found: error
+
+  windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    # electron-updater (auto-update) lee latest.yml de los assets de la Release.
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build NSIS installer
+        run: npx electron-builder --win --publish never
+
+      - name: Upload installer + update metadata (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kova-win
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+
+  linux:
+    name: Linux (AppImage)
+    runs-on: ubuntu-latest
+    # Solo AppImage en CI (el .pacman se sigue buildando localmente en Arch);
+    # el AppImage es el vehículo del auto-update (latest-linux.yml).
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AppImage
+        run: npx electron-builder --linux AppImage --publish never
+
+      - name: Upload AppImage + update metadata (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kova-linux
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.blockmap
+            dist/latest-linux.yml
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [mac, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Collect installers from all platforms
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Compute version tag
+        id: version
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            # Misma versión re-ejecutada → reemplaza los assets (clobber).
+            gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" dist/* \
+              --repo "${{ github.repository }}" \
+              --title "Kova $TAG" \
+              --generate-notes
+          fi

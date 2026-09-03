@@ -6,9 +6,11 @@
 
 const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences } = require("electron");
 const path = require("node:path");
+const updater = require("./updater.cjs");
 
 const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
+const RELEASES_URL = "https://github.com/cleivaj/task_manager_electron/releases";
 
 // Wayland: el stream de pantalla sale por PipeWire vía xdg-desktop-portal, y
 // Chromium solo lo usa corriendo en Wayland nativo con el capturador activado.
@@ -22,6 +24,10 @@ if (process.platform === "linux") {
 let mainWindow = null;
 let tray = null;
 let trayIcon = null;
+let updateInfo = null; // { version, url, notes, assets } — soft notifier (macOS/pacman/dev)
+let manualCheck = null; // engine activo para el item "Check for updates…" según plataforma
+let autoUpdaterApi = null; // electron-updater (Windows / Linux AppImage empaquetado)
+let autoUpdateState = null; // { version, phase: "downloading" | "ready" } — auto-update
 
 // Windows: las notificaciones nativas solo aparecen con AppUserModelID.
 if (process.platform === "win32") {
@@ -237,8 +243,35 @@ async function loadTrayIcon() {
 }
 
 function createTray() {
-    const menu = Menu.buildFromTemplate([
+    const template = [
         { label: "Open Kova", click: () => showMainWindow() },
+    ];
+    // Auto-update (electron-updater): descargando o listo para reiniciar.
+    if (autoUpdateState) {
+        template.push({ type: "separator" });
+        if (autoUpdateState.phase === "ready") {
+            template.push({
+                label: `Restart & update to Kova ${autoUpdateState.version}`,
+                click: () => { try { autoUpdaterApi?.quitAndInstall(); } catch { /* noop */ } },
+            });
+        } else {
+            template.push({ label: `Downloading Kova ${autoUpdateState.version}…`, enabled: false });
+        }
+        template.push({ label: "Release notes", click: () => shell.openExternal(RELEASES_URL) });
+    } else if (updateInfo) {
+        // Soft notifier (macOS / Linux pacman / desarrollo): descarga manual.
+        template.push({ type: "separator" });
+        template.push({
+            label: `Download Kova ${updateInfo.version}`,
+            click: () => updater.downloadUpdate(updateInfo),
+        });
+        template.push({
+            label: "Release notes",
+            click: () => { if (updateInfo.url) shell.openExternal(updateInfo.url); },
+        });
+    }
+    template.push(
+        { type: "separator" },
         {
             label: "Launch at login",
             type: "checkbox",
@@ -246,13 +279,94 @@ function createTray() {
             click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
         },
         { label: "Test notification", click: () => showNativeNotification({ title: "Kova", body: "Notifications are working on this device" }) },
+        { label: "Check for updates…", click: () => (manualCheck ? manualCheck() : updater.checkForUpdates({ manual: true })) },
         { type: "separator" },
         { label: "Quit Kova", click: () => quitApp() },
-    ]);
+    );
     tray = new Tray(trayIcon);
     tray.setToolTip("Kova");
-    tray.setContextMenu(menu);
+    tray.setContextMenu(Menu.buildFromTemplate(template));
     tray.on("click", () => showMainWindow());
+}
+
+// Auto-update por plataforma:
+//   • Windows empaquetado / Linux AppImage → electron-updater: descarga en
+//     segundo plano y pide reiniciar (auto-update silencioso).
+//   • macOS → soft notifier: sin firma Developer ID, Squirrel.Mac no puede
+//     reemplazar la app (regla de Apple), así que avisa y descarga el DMG.
+//   • Linux instalado por pacman (sin APPIMAGE) y desarrollo (`npm start`) →
+//     soft notifier (el feed de electron-updater no existe fuera del build).
+function setupUpdaters() {
+    const appImage = process.platform === "linux" && Boolean(process.env.APPIMAGE);
+    const soft = !app.isPackaged || process.platform === "darwin" || (process.platform === "linux" && !appImage);
+
+    if (soft) {
+        manualCheck = () => updater.checkForUpdates({ manual: true });
+        updater.startUpdater({
+            onState: (info) => {
+                updateInfo = info;
+                if (tray) createTray(); // reconstruye el menú con la sección de update
+            },
+        });
+        return;
+    }
+
+    // Auto-update real (win32 empaquetado / Linux AppImage).
+    const { autoUpdater } = require("electron-updater");
+    autoUpdaterApi = autoUpdater;
+    autoUpdater.autoDownload = true; // descarga en segundo plano; avisamos al estar listo
+    autoUpdater.logger = {
+        info: (m) => dbg("autoUpdater:", m),
+        warn: (m) => dbg("autoUpdater warn:", m),
+        error: (m) => dbg("autoUpdater error:", m),
+    };
+    let manualPending = false;
+    const upToDate = () => {
+        new Notification({ title: "Kova", body: `You are up to date (${app.getVersion()}).` }).show();
+    };
+
+    autoUpdater.on("update-available", (info) => {
+        const version = info?.version || "";
+        dbg("auto-update available:", version);
+        manualPending = false;
+        autoUpdateState = { version, phase: "downloading" };
+        if (tray) createTray();
+    });
+    autoUpdater.on("update-not-available", () => {
+        dbg("auto-update: up to date");
+        if (manualPending) { manualPending = false; upToDate(); }
+    });
+    autoUpdater.on("update-downloaded", (info) => {
+        const version = info?.version || "";
+        dbg("auto-update downloaded:", version);
+        autoUpdateState = { version, phase: "ready" };
+        if (tray) createTray();
+        const n = new Notification({
+            title: `Kova ${version} downloaded`,
+            body: "Click to restart and install the update.",
+        });
+        n.on("click", () => { try { autoUpdater.quitAndInstall(); } catch { /* noop */ } });
+        n.show();
+    });
+    autoUpdater.on("error", (err) => {
+        dbg("autoUpdater error:", err?.message ?? err);
+        if (manualPending) { manualPending = false; upToDate(); }
+        // Error en check automático: no molesta, el siguiente reintenta.
+    });
+
+    manualCheck = async () => {
+        manualPending = true;
+        try {
+            await autoUpdater.checkForUpdates();
+        } catch (err) {
+            dbg("manual check failed:", err?.message ?? err);
+            manualPending = false;
+            upToDate();
+        }
+    };
+    const check = () => autoUpdater.checkForUpdates().catch(() => {});
+    setTimeout(check, 15000); // primer check poco después del arranque
+    setInterval(check, 6 * 60 * 60 * 1000); // y luego cada 6 h
 }
 
 function showMainWindow() {
@@ -294,6 +408,10 @@ if (!gotLock) {
 
         mainWindow = createAppWindow();
         createTray();
+
+        // Auto-update: el motor depende de la plataforma (electron-updater en
+        // Windows/Linux AppImage; soft notifier en macOS, pacman y desarrollo).
+        setupUpdaters();
 
         // macOS: clic en el dock recrea la ventana.
         app.on("activate", () => {
