@@ -44,7 +44,7 @@ function setupMediaPermissions() {
     // Comprobación síncrona (navigator.permissions.query, enumerateDevices…).
     ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
         if (!isAppUrl(requestingOrigin)) return false;
-        return permission === "media" || permission === "mediaKeySystem";
+        return permission === "media" || permission === "mediaKeySystem" || permission === "display-capture";
     });
 
     // Petición asíncrona (getUserMedia). En macOS hay que pedir el acceso al
@@ -73,7 +73,7 @@ function setupMediaPermissions() {
             callback(true);
             return;
         }
-        if (permission === "mediaKeySystem" || permission === "fullscreen" || permission === "notifications") {
+        if (permission === "mediaKeySystem" || permission === "fullscreen" || permission === "notifications" || permission === "display-capture") {
             callback(true);
             return;
         }
