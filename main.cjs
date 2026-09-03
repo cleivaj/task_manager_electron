@@ -1,11 +1,8 @@
 "use strict";
 
-// Kova desktop shell (PoC). Carga la app web existente (no un port) y añade la
-// capa nativa: notificaciones del SO, tray con badge/autostart, close-to-tray y
-// manejo de ventanas (la sala de llamada abre con window.open → nueva ventana
-// Electron, los links externos → browser del sistema).
-//
-// La APP_URL se configura con KOVA_APP_URL (default: la instancia de producción).
+// Kova desktop shell: carga la app web existente y añade la capa nativa —
+// notificaciones del SO, tray, close-to-tray y permisos de media (cámara/mic/
+// pantalla). APP_URL se configura con KOVA_APP_URL (default: producción).
 
 const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences } = require("electron");
 const path = require("node:path");
@@ -13,15 +10,10 @@ const path = require("node:path");
 const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
 
-// Linux/Wayland: compartir pantalla NO usa la vía X11 que sugiere el picker.
-// El stream real sale por PipeWire vía xdg-desktop-portal, y Chromium solo lo
-// usa si corre en Wayland nativo y con el capturador PipeWire activado. Sin
-// estos switches la fuente se elige, el menú se cierra… y nunca nace el stream
-// (síntoma exacto: "elijo y no comparte nada"). Debe ir antes de app.whenReady.
+// Wayland: el stream de pantalla sale por PipeWire vía xdg-desktop-portal, y
+// Chromium solo lo usa corriendo en Wayland nativo con el capturador activado.
 if (process.platform === "linux") {
     app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
-    // ozone-platform-hint=auto: prefiere Wayland nativo cuando WAYLAND_DISPLAY
-    // está presente (XWayland no puede capturar ventanas Wayland reales).
     if (process.env.WAYLAND_DISPLAY) {
         app.commandLine.appendSwitch("ozone-platform-hint", "auto");
     }
@@ -31,7 +23,7 @@ let mainWindow = null;
 let tray = null;
 let trayIcon = null;
 
-// En Windows la notificación nativa solo aparece si la app tiene AppUserModelID.
+// Windows: las notificaciones nativas solo aparecen con AppUserModelID.
 if (process.platform === "win32") {
     app.setAppUserModelId("com.wearemateria.kova");
 }
@@ -44,14 +36,10 @@ function isAppUrl(url) {
     }
 }
 
-// --- Permisos de media (cámara/mic/pantalla) ---
-//
-// En el navegador, getUserMedia dispara el prompt de Chromium y el propio
-// navegador ya trae los permisos del SO. En Electron NO hay prompt: el
-// renderer pregunta al main process vía session.setPermissionRequestHandler,
-// y si la app no concede, getUserMedia falla (en Windows en silencio; en macOS
-// ni siquiera llega si Info.plist no declara el uso de cámara/mic).
-// Concedemos SOLO lo que la app usa y solo para el origin de la app.
+// En el navegador getUserMedia muestra el prompt de Chromium y el navegador ya
+// tiene los permisos del SO. En Electron no hay prompt: el renderer pregunta al
+// main process y si no concedemos, getUserMedia falla. Concedemos solo lo que la
+// app usa y solo para el origin de la app.
 function setupMediaPermissions() {
     const ses = session.defaultSession;
 
@@ -61,30 +49,22 @@ function setupMediaPermissions() {
         return permission === "media" || permission === "mediaKeySystem" || permission === "display-capture";
     });
 
-    // Petición asíncrona (getUserMedia). En macOS hay que pedir el acceso al
-    // SO explícitamente (TCC) — sin askForMediaAccess, la cámara/mic quedan
-    // denegados aunque la app lo conceda.
     ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-        // Para `media` el details trae securityOrigin; para `display-capture` solo
-        // existe requestingUrl — si usáramos solo securityOrigin, la pantalla
-        // quedaría denegada en silencio (bug real: "nadie puede compartir").
+        // `media` trae securityOrigin; `display-capture` solo trae requestingUrl.
         const origin = details?.securityOrigin ?? details?.requestingUrl ?? "";
         if (!isAppUrl(origin)) {
             callback(false);
             return;
         }
         if (permission === "media") {
+            // macOS: pedir el acceso TCC explícitamente (sin askForMediaAccess la
+            // cámara/mic quedan denegadas aunque la app conceda).
             if (process.platform === "darwin") {
-                const mediaTypes = details?.mediaTypes ?? [];
-                const wantsCamera = mediaTypes.includes("video");
-                const wantsMic = mediaTypes.includes("audio");
+                const types = details?.mediaTypes ?? [];
                 const asks = [];
-                if (wantsCamera) asks.push(systemPreferences.askForMediaAccess("camera"));
-                if (wantsMic) asks.push(systemPreferences.askForMediaAccess("microphone"));
-                if (asks.length === 0) {
-                    callback(true);
-                    return;
-                }
+                if (types.includes("video")) asks.push(systemPreferences.askForMediaAccess("camera"));
+                if (types.includes("audio")) asks.push(systemPreferences.askForMediaAccess("microphone"));
+                if (asks.length === 0) { callback(true); return; }
                 Promise.all(asks).then((results) => callback(results.every(Boolean)));
                 return;
             }
@@ -92,74 +72,49 @@ function setupMediaPermissions() {
             return;
         }
         if (permission === "mediaKeySystem" || permission === "fullscreen" || permission === "notifications" || permission === "display-capture") {
-            console.log(`[kova] granted permission: ${permission}`);
             callback(true);
             return;
         }
-        console.log(`[kova] denied permission: ${permission} (origin: ${origin})`);
         callback(false);
     });
 
-    // getDisplayMedia (compartir pantalla en la sala): en Electron no hay
-    // picker nativo del SO; enumeramos fuentes con desktopCapturer y mostramos
-    // un menú nativo para que el usuario elija qué compartir.
     ses.setDisplayMediaRequestHandler(async (request, callback) => {
-        // Electron LANZA TypeError si el request pide vídeo y el callback llega
-        // sin stream (cancelación / 0 fuentes) → lo absorbemos aquí; la web
-        // recibe el reject de getDisplayMedia y lo trata como cancelado.
-        const finish = (streams) => {
-            try {
-                callback(streams);
-            } catch (err) {
-                console.log(`[kova] display-media: request ended without stream (${err?.message ?? err})`);
-            }
+        // Electron lanza un TypeError si el request pide vídeo y el callback llega
+        // sin stream (cancelación) — lo absorbemos; la web recibe el reject.
+        const grant = (streams) => {
+            try { callback(streams); } catch { /* cancel */ }
         };
         try {
+            // macOS: la captura de pantalla es un permiso TCC independiente (10.15+).
+            if (process.platform === "darwin") {
+                const ok = await systemPreferences.askForMediaAccess("screen");
+                if (!ok) { grant({}); return; }
+            }
             const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
-            if (sources.length === 0) {
-                finish({});
+            // 0 o 1 fuentes: nada que elegir → conceder (o cancelar) directo. Un
+            // menú de un solo item bajo el cursor se cierra con el mouse-up del
+            // click que lo abrió y pierde la elección (bug real en Wayland).
+            if (sources.length <= 1) {
+                grant(sources[0] ? { video: sources[0] } : {});
                 return;
             }
-            // Una única fuente (típico en Wayland: solo la pantalla) → compartir
-            // directo. Un menú de un solo item bajo el cursor es frágil: el
-            // mouse-up del click que abrió el menú lo cierra sin activar nada.
-            if (sources.length === 1) {
-                const s = sources[0];
-                console.log(`[kova] display-media: 1 source, granting "${s.name}" (${s.id})`);
-                finish({ video: s });
-                return;
-            }
-            // Menú nativo para elegir entre varias fuentes. Un flag evita
-            // responder dos veces; el click del item corre síncrono ANTES del
-            // cierre, así que la cancelación (escape/click fuera) se difiere un
-            // tick y nunca traga una elección real.
+            // Varias fuentes → menú nativo en el cursor. El click del item corre
+            // síncrono antes de menu-will-close; la cancelación se difiere un tick
+            // para nunca tragar una elección real (bug real en Windows/Linux).
             let done = false;
-            const guarded = (streams) => {
-                if (done) return;
-                done = true;
-                finish(streams);
-            };
-            console.log(`[kova] display-media: ${sources.length} sources available`);
+            const choose = (streams) => { if (!done) { done = true; grant(streams); } };
             const template = sources.map((s) => ({
                 label: s.name,
-                click: () => {
-                    console.log(`[kova] display-media: picked "${s.name}" (${s.id})`);
-                    // Pasar el objeto DesktopCapturerSource COMPLETO (no solo
-                    // {id,name}): en Windows el capturador necesita campos como
-                    // display_id para resolver la pantalla/ventana real; un objeto
-                    // parcial concede el permiso pero el stream nunca nace.
-                    guarded({ video: s });
-                },
+                // Objeto DesktopCapturerSource COMPLETO: en Windows el capturador
+                // necesita campos como display_id; un {id,name} parcial concede
+                // el permiso pero el stream nunca nace.
+                click: () => choose({ video: s }),
             }));
             const menu = Menu.buildFromTemplate(template);
-            menu.on("menu-will-close", () => setTimeout(() => guarded({}), 0));
-            // popup() sin anclar a ventana: aparece en el cursor. Anclar exigía
-            // WebContents.fromFrame, que no está exportado de forma fiable en el
-            // main process (undefined en Windows → crasheaba antes del menú).
+            menu.on("menu-will-close", () => setTimeout(() => choose({}), 0));
             menu.popup();
-        } catch (err) {
-            console.log(`[kova] display-media: error ${err?.message ?? err}`);
-            finish({});
+        } catch {
+            grant({});
         }
     });
 }
@@ -171,8 +126,7 @@ function createAppWindow(url = APP_URL) {
         show: false,
         autoHideMenuBar: true,
         backgroundColor: "#0b0f14",
-        // Ícono de ventana (Linux/Windows; no macOS — el dock/DMG usa el .icns
-        // que electron-builder genera desde build/icon.png).
+        // Ícono de ventana (Linux/Windows; macOS usa el .icns del DMG).
         icon: path.join(__dirname, "build", "icon.png"),
         webPreferences: {
             preload: path.join(__dirname, "preload.cjs"),
@@ -183,8 +137,8 @@ function createAppWindow(url = APP_URL) {
 
     win.once("ready-to-show", () => win.show());
 
-    // window.open (la sala de llamada abre en nueva pestaña hoy) → nueva ventana
-    // Electron; cualquier otro origin → browser por defecto del sistema.
+    // window.open (la sala abre en pestaña nueva hoy) → nueva ventana Electron;
+    // cualquier otro origin → browser del sistema.
     win.webContents.setWindowOpenHandler(({ url }) => {
         if (isAppUrl(url)) {
             createAppWindow(url);
@@ -194,7 +148,7 @@ function createAppWindow(url = APP_URL) {
         return { action: "deny" };
     });
 
-    // La app nunca navega fuera de su origin (un link malicioso no se lleva la ventana).
+    // La app nunca navega fuera de su origin.
     win.webContents.on("will-navigate", (e, url) => {
         if (!isAppUrl(url)) {
             e.preventDefault();
@@ -202,7 +156,7 @@ function createAppWindow(url = APP_URL) {
         }
     });
 
-    // Close-to-tray: cerrar la ventana la oculta; Quit real sale por el tray/menu.
+    // Close-to-tray: cerrar la ventana la oculta; Quit real sale por el tray.
     win.on("close", (e) => {
         if (!app.isQuitting) {
             e.preventDefault();
@@ -214,7 +168,7 @@ function createAppWindow(url = APP_URL) {
     return win;
 }
 
-// Ícono del tray: usa el logo real de la app (fallback: pixel transparente).
+// Ícono del tray: el logo real de la app (fallback: pixel transparente).
 async function loadTrayIcon() {
     try {
         const res = await net.fetch(APP_URL + "/logotipo.png");
@@ -240,12 +194,7 @@ function createTray() {
             checked: Boolean(app.getLoginItemSettings().openAtLogin),
             click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
         },
-        // Diagnóstico rápido: verifica el camino SO (permisos/registro) sin
-        // depender de SSE ni del login. Útil para depurar en remoto.
-        {
-            label: "Test notification",
-            click: () => showNativeNotification({ title: "Kova", body: "Notifications are working on this device" }),
-        },
+        { label: "Test notification", click: () => showNativeNotification({ title: "Kova", body: "Notifications are working on this device" }) },
         { type: "separator" },
         { label: "Quit Kova", click: () => quitApp() },
     ]);
@@ -268,8 +217,7 @@ function quitApp() {
     app.quit();
 }
 
-// Notificación nativa (main process). Sin push provider: instantánea y fiable
-// en macOS/Windows/Linux — es el punto de la PoC.
+// Notificación nativa desde el main process (el preload la pide vía IPC).
 function showNativeNotification({ title = "Kova", body = "", url } = {}) {
     const n = new Notification({ title, body });
     n.on("click", () => {
@@ -287,13 +235,9 @@ if (!gotLock) {
 
     app.whenReady().then(async () => {
         app.isQuitting = false;
-
-        // Cámara/mic/pantalla: sin esto getUserMedia falla en el shell.
         setupMediaPermissions();
 
         trayIcon = await loadTrayIcon();
-
-        // Puente preload → main: la página pide una notificación nativa.
         ipcMain.on("notify", (_evt, payload) => showNativeNotification(payload));
 
         mainWindow = createAppWindow();
@@ -303,7 +247,7 @@ if (!gotLock) {
         app.on("activate", () => {
             if (BrowserWindow.getAllWindows().length === 0) mainWindow = createAppWindow();
         });
-        // Sin window-all-closed quit: la app vive en el tray hasta Quit explícito.
+        // La app vive en el tray hasta Quit explícito.
         app.on("window-all-closed", () => { /* no-op */ });
     });
 }
