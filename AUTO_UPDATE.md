@@ -1,4 +1,4 @@
-# Auto-update de Kova Desktop
+# Auto-update de Omni Desktop
 
 > Referencia del sistema de actualización de la app de escritorio (shell Electron).
 > Fecha: 2026-09-03 · Aplica al repo `cleivaj/task_manager_electron` (carpeta `desktop/`).
@@ -25,7 +25,7 @@ El motor depende de la plataforma (lo decide `setupUpdaters()` en `main.cjs`):
 
 | Motor | Dónde corre | Qué hace |
 |---|---|---|
-| `electron-updater` (auto silencioso) | **Windows empaquetado** y **Linux AppImage** | Descarga en segundo plano (diferencial por blockmap), y al terminar notifica *"Kova X downloaded — restart to install"* + item en el tray **Restart & update** → `quitAndInstall()` |
+| `electron-updater` (auto silencioso) | **Windows empaquetado** y **Linux AppImage** | Descarga en segundo plano (diferencial por blockmap), y al terminar notifica *"Omni X downloaded — restart to install"* + item en el tray **Restart & update** → `quitAndInstall()` |
 | `updater.cjs` (soft notifier) | **macOS**, **Linux pacman** y **desarrollo** (`npm start`) | Poll a `releases/latest` (repo público → sin token), avisa y descarga el instalador correcto (`.dmg` / `.AppImage`) |
 
 ### Piezas
@@ -40,8 +40,8 @@ El motor depende de la plataforma (lo decide `setupUpdaters()` en `main.cjs`):
 ### Comportamiento
 
 - **Cadencia:** check al arrancar (+10–15 s), luego cada 6 h, y manual vía tray → **Check for updates…** (siempre disponible).
-- **Windows / Linux AppImage (auto):** `update-available` → tray muestra *"Downloading Kova X…"*; al terminar → notificación nativa "Kova X downloaded — click to restart and install" + tray **Restart & update** → `quitAndInstall()`. Sin clicks extra: solo reiniciar cuando ya está listo.
-- **macOS / Linux pacman / dev (soft):** versión nueva → notificación "Kova X is available — click to download" + tray **Download Kova X** + **Release notes**.
+- **Windows / Linux AppImage (auto):** `update-available` → tray muestra *"Downloading Omni X…"*; al terminar → notificación nativa "Omni X downloaded — click to restart and install" + tray **Restart & update** → `quitAndInstall()`. Sin clicks extra: solo reiniciar cuando ya está listo.
+- **macOS / Linux pacman / dev (soft):** versión nueva → notificación "Omni X is available — click to download" + tray **Download Omni X** + **Release notes**.
   - **macOS** → descarga el `.dmg` (Intel vs Apple Silicon según `process.arch`) y lo monta → arrastrar a Applications.
   - **Linux pacman** → descarga el `.AppImage` (`chmod +x`) y lo ejecuta.
 - **Check manual sin update** → "You are up to date (X.Y.Z)" en ambos motores. En desarrollo (`npm start`) el motor es el soft (electron-updater no tiene feed fuera del build) y el check manual anuncia, para poder probar.
@@ -62,7 +62,7 @@ No hay secrets que configurar: la publicación usa el `GITHUB_TOKEN` del runner
 cd desktop && npm start
 ```
 Tray → **Check for updates…** → si la última Release es más nueva que la versión local,
-aparece la notificación y la sección "Download Kova X" en el menú.
+aparece la notificación y la sección "Download Omni X" en el menú.
 
 ## macOS: las dos rutas hacia el update silencioso
 

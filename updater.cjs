@@ -1,6 +1,6 @@
 "use strict";
 
-// Actualizador Kova (soft update multi-plataforma):
+// Actualizador Omni (soft update multi-plataforma):
 //   • Fuente de versión: GitHub Releases del repo desktop (público) — la API
 //     /releases/latest se lee sin token. El CI publica un Release por push a
 //     `prod` con los instaladores de las 3 plataformas.
@@ -25,11 +25,11 @@ const UPDATE_REPO = "cleivaj/task_manager_electron";
 const LATEST_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // cada 6 h
 const FIRST_CHECK_DELAY_MS = 10 * 1000; // 10 s tras arrancar (la ventana ya está visible)
-const NOTIFY_LABEL = "Kova";
+const NOTIFY_LABEL = "Omni";
 
 // Debug solo visible en desarrollo (misma regla que main.cjs).
 const dbg = (...args) => {
-    if (!app.isPackaged) console.log("[kova-update]", ...args);
+    if (!app.isPackaged) console.log("[omni-update]", ...args);
 };
 
 // Toast con el icono de la app y referencia persistente (ver showToast en
@@ -74,7 +74,7 @@ function isNewer(a, b) {
 async function fetchLatestRelease() {
     const res = await net.fetch(LATEST_API, {
         headers: {
-            "User-Agent": "Kova-Desktop",
+            "User-Agent": "Omni-Desktop",
             Accept: "application/vnd.github+json",
         },
     });
@@ -114,7 +114,7 @@ async function downloadAndOpen(info) {
     }
     try {
         dbg("downloading", asset.name);
-        const res = await net.fetch(asset.url, { headers: { "User-Agent": "Kova-Desktop" } });
+        const res = await net.fetch(asset.url, { headers: { "User-Agent": "Omni-Desktop" } });
         if (!res.ok) throw new Error(`download ${res.status}`);
         const target = path.join(app.getPath("downloads"), asset.name);
         const ws = fs.createWriteStream(target);

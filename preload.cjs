@@ -1,7 +1,7 @@
 "use strict";
 
 // Preload (mundo aislado): expone `window.desktop` a la app e inyecta el shim
-// en el MAIN WORLD de la página — porque el bus realtime de Kova (kova:realtime)
+// en el MAIN WORLD de la página — porque el bus realtime de Omni (kova:realtime)
 // despacha CustomEvents en el `window` del main world, no del aislado.
 
 const { contextBridge, ipcRenderer } = require("electron");
@@ -42,6 +42,7 @@ const NOTIFICATION_LABELS = {
     PROJECT_DELETED: "deleted a project",
     WORKSPACE_MEMBER_REMOVED: "removed you from a workspace",
     CALL_INVITED: "invited you to a video call",
+    VACATION_REVIEW_REQUESTED: "sent you a vacation request to review",
 };
 
 // Shim inyectado en el main world. Traduce en notificaciones nativas del SO:
@@ -77,14 +78,23 @@ const SHIM = `(() => {
         remember(id);
         const type = detail.notificationType || "";
         const label = LABELS[type] || "you have a new notification";
-        const actor = detail.data && typeof detail.data.actorName === "string"
-            ? detail.data.actorName.trim()
-            : "";
-        const body = actor
-            ? actor + " " + label
-            : label.charAt(0).toUpperCase() + label.slice(1);
+        // El backend manda ya el texto bueno ("New message from Ana" + preview):
+        // se usa tal cual. Si viene de un payload viejo sin texto, se compone con
+        // el label ("Ana sent you a message").
+        const title = typeof detail.title === "string" && detail.title.trim()
+            ? detail.title
+            : "Omni";
+        let body = typeof detail.body === "string" ? detail.body.trim() : "";
+        if (!body) {
+            const actor = detail.data && typeof detail.data.actorName === "string"
+                ? detail.data.actorName.trim()
+                : "";
+            body = actor
+                ? actor + " " + label
+                : label.charAt(0).toUpperCase() + label.slice(1);
+        }
         if (window.desktop && typeof window.desktop.notify === "function") {
-            window.desktop.notify({ title: "Kova", body });
+            window.desktop.notify({ title, body });
         }
     }
 
@@ -96,7 +106,7 @@ const SHIM = `(() => {
     // --- Camino 2: poll fallback a /notification/latest ---
     function openDb() {
         return new Promise((resolve, reject) => {
-            const req = indexedDB.open("kova_push_session", 1);
+            const req = indexedDB.open("omni_push_session", 1);
             req.onupgradeneeded = () => {
                 const db = req.result;
                 if (!db.objectStoreNames.contains("sessions")) db.createObjectStore("sessions");
@@ -143,7 +153,7 @@ const SHIM = `(() => {
                 if (Number.isNaN(created) || created < cutoff) continue;
                 remember(n.id);
                 if (window.desktop && typeof window.desktop.notify === "function") {
-                    window.desktop.notify({ title: n.title || "Kova", body: n.body || "" });
+                    window.desktop.notify({ title: n.title || "Omni", body: n.body || "" });
                 }
             }
         } catch {

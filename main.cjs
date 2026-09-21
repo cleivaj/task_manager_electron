@@ -1,6 +1,6 @@
 "use strict";
 
-// Kova desktop shell: carga la app web existente y añade la capa nativa —
+// Omni desktop shell: carga la app web existente y añade la capa nativa —
 // notificaciones del SO, tray, close-to-tray y permisos de media (cámara/mic/
 // pantalla). APP_URL se configura con KOVA_APP_URL (default: producción).
 
@@ -45,7 +45,7 @@ function isAppUrl(url) {
 // Debug solo visible en desarrollo (`npm start`, app sin empaquetar).
 // Los builds empaquetados (dmg/exe/pacman) no imprimen nada.
 const dbg = (...args) => {
-    if (!app.isPackaged) console.log("[kova-debug]", ...args);
+    if (!app.isPackaged) console.log("[omni-debug]", ...args);
 };
 
 // En el navegador getUserMedia muestra el prompt de Chromium y el navegador ya
@@ -244,25 +244,25 @@ async function loadTrayIcon() {
 
 function createTray() {
     const template = [
-        { label: "Open Kova", click: () => showMainWindow() },
+        { label: "Open Omni", click: () => showMainWindow() },
     ];
     // Auto-update (electron-updater): descargando o listo para reiniciar.
     if (autoUpdateState) {
         template.push({ type: "separator" });
         if (autoUpdateState.phase === "ready") {
             template.push({
-                label: `Restart & update to Kova ${autoUpdateState.version}`,
+                label: `Restart & update to Omni ${autoUpdateState.version}`,
                 click: () => { try { autoUpdaterApi?.quitAndInstall(); } catch { /* noop */ } },
             });
         } else {
-            template.push({ label: `Downloading Kova ${autoUpdateState.version}…`, enabled: false });
+            template.push({ label: `Downloading Omni ${autoUpdateState.version}…`, enabled: false });
         }
         template.push({ label: "Release notes", click: () => shell.openExternal(RELEASES_URL) });
     } else if (updateInfo) {
         // Soft notifier (macOS / Linux pacman / desarrollo): descarga manual.
         template.push({ type: "separator" });
         template.push({
-            label: `Download Kova ${updateInfo.version}`,
+            label: `Download Omni ${updateInfo.version}`,
             click: () => updater.downloadUpdate(updateInfo),
         });
         template.push({
@@ -278,17 +278,17 @@ function createTray() {
             checked: Boolean(app.getLoginItemSettings().openAtLogin),
             click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
         },
-        { label: "Test notification", click: () => showNativeNotification({ title: "Kova", body: "Notifications are working on this device" }) },
+        { label: "Test notification", click: () => showNativeNotification({ title: "Omni", body: "Notifications are working on this device" }) },
         { label: "Check for updates…", click: () => (manualCheck ? manualCheck() : updater.checkForUpdates({ manual: true })) },
         { type: "separator" },
-        { label: "Quit Kova", click: () => quitApp() },
+        { label: "Quit Omni", click: () => quitApp() },
     );
     // El Tray se crea UNA sola vez; los cambios de estado solo reconstruyen el
     // menú. En Windows, crear un Tray nuevo sin destruir el anterior deja
     // iconos duplicados acumulándose en la bandeja.
     if (!tray) {
         tray = new Tray(trayIcon);
-        tray.setToolTip("Kova");
+        tray.setToolTip("Omni");
         tray.on("click", () => showMainWindow());
     }
     tray.setContextMenu(Menu.buildFromTemplate(template));
@@ -327,7 +327,7 @@ function setupUpdaters() {
     };
     let manualPending = false;
     let manualNotified = false; // evita doble toast (evento + resultado del check)
-    const upToDate = () => showToast("Kova", `You are up to date (${app.getVersion()}).`);
+    const upToDate = () => showToast("Omni", `You are up to date (${app.getVersion()}).`);
 
     autoUpdater.on("update-available", (info) => {
         const version = info?.version || "";
@@ -349,7 +349,7 @@ function setupUpdaters() {
         dbg("auto-update downloaded:", version);
         autoUpdateState = { version, phase: "ready" };
         if (tray) createTray();
-        showToast(`Kova ${version} downloaded`, "Click to restart and install the update.", () => {
+        showToast(`Omni ${version} downloaded`, "Click to restart and install the update.", () => {
             try { autoUpdater.quitAndInstall(); } catch { /* noop */ }
         });
     });
@@ -364,7 +364,7 @@ function setupUpdaters() {
         if (manualPending && !manualNotified) {
             manualNotified = true;
             manualPending = false;
-            showToast("Kova", "Update check failed. Try again later.");
+            showToast("Omni", "Update check failed. Try again later.");
         }
         // Error en check automático: no molesta, el siguiente reintenta.
     });
@@ -387,7 +387,7 @@ function setupUpdaters() {
             dbg("manual check failed:", err?.message ?? err);
             if (manualPending && !manualNotified) {
                 manualNotified = true;
-                showToast("Kova", "Update check failed. Try again later.");
+                showToast("Omni", "Update check failed. Try again later.");
             }
             manualPending = false;
         }
@@ -434,7 +434,7 @@ function showToast(title, body, onClick) {
 }
 
 // Notificación nativa desde el main process (el preload la pide vía IPC).
-function showNativeNotification({ title = "Kova", body = "", url } = {}) {
+function showNativeNotification({ title = "Omni", body = "", url } = {}) {
     showToast(title, body, () => {
         showMainWindow();
         if (url && isAppUrl(url)) void mainWindow?.loadURL(url);

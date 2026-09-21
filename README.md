@@ -1,4 +1,4 @@
-# Kova Desktop (PoC)
+# Omni Desktop (PoC)
 
 Thin Electron shell around the existing web app — **no port, no web changes**.
 
@@ -6,7 +6,7 @@ Thin Electron shell around the existing web app — **no port, no web changes**.
 |---|---|
 | Notifications | Native OS notifications fed by the **same SSE stream the web app already keeps open** (`/notification/stream`) — no push provider, no Firefox delays, no macOS web-push failures. |
 | Window | Chromium loads the deployed app (configurable via `KOVA_APP_URL`). |
-| Tray | Icon with "Open Kova", "Launch at login" toggle, Quit. |
+| Tray | Icon with "Open Omni", "Launch at login" toggle, Quit. |
 | Close-to-tray | Closing the window hides it; Quit happens from the tray/menu. |
 | Call room | `window.open` (the meeting opens in a new tab today) is intercepted → new Electron window. WebRTC works as-is (same Chromium engine). Screen share needs macOS **Screen Recording** permission (System Preferences). |
 | External links | Always opened in the system browser, never inside the app window. |
@@ -49,9 +49,9 @@ point `ELECTRON_OVERRIDE_DIST_PATH` at your distro's Electron.)
 ## Build installers
 
 ```bash
-npm run dist:mac     # → dist/Kova-<version>.dmg   (needs macOS)
-npm run dist:win     # → dist/Kova Setup <version>.exe (needs Windows or wine)
-npm run dist:linux   # → dist/Kova-<version>.AppImage
+npm run dist:mac     # → dist/Omni-<version>.dmg   (needs macOS)
+npm run dist:win     # → dist/Omni Setup <version>.exe (needs Windows or wine)
+npm run dist:linux   # → dist/Omni-<version>.AppImage
 ```
 
 ### Via GitHub Actions (no local Mac/Windows needed)
@@ -64,7 +64,7 @@ The repo has `.github/workflows/desktop-build.yml` (free on a public repo):
   is created with the DMGs attached.
 
 Builds are unsigned (pilot): testers open with right-click → **Open**, or
-`xattr -dr com.apple.quarantine /Applications/Kova.app` once per build.
+`xattr -dr com.apple.quarantine /Applications/Omni.app` once per build.
 
 > A DMG can only be built on macOS (`hdiutil`), which is why the workflow uses a
 > `macos-latest` runner. The shell itself is pure JS — nothing platform-specific

@@ -1,7 +1,7 @@
 {
-  "name": "kova-desktop",
+  "name": "omni-desktop",
   "version": "0.1.9",
-  "description": "Kova desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
+  "description": "Omni desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
     "name": "We Are Materia",
@@ -27,8 +27,8 @@
     "electron-builder": "^26.0.0"
   },
   "build": {
-    "appId": "com.wearemateria.kova",
-    "productName": "Kova",
+    "appId": "com.wearemateria.omni",
+    "productName": "Omni",
     "publish": {
       "provider": "github",
       "owner": "cleivaj",
@@ -46,15 +46,15 @@
       ],
       "category": "public.app-category.productivity",
       "extendInfo": {
-        "NSCameraUsageDescription": "Kova uses your camera for video calls.",
-        "NSMicrophoneUsageDescription": "Kova uses your microphone for video calls."
+        "NSCameraUsageDescription": "Omni uses your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Omni uses your microphone for video calls."
       }
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "artifactName": "Kova-Setup-${version}.${ext}"
+      "artifactName": "Omni-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
