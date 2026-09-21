@@ -4,7 +4,7 @@
 // notificaciones del SO, tray, close-to-tray y permisos de media (cámara/mic/
 // pantalla). APP_URL se configura con KOVA_APP_URL (default: producción).
 
-const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, net, shell, session, desktopCapturer, systemPreferences } = require("electron");
+const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, shell, session, desktopCapturer, systemPreferences } = require("electron");
 const path = require("node:path");
 const updater = require("./updater.cjs");
 
@@ -225,15 +225,13 @@ function createAppWindow(url = APP_URL) {
     return win;
 }
 
-// Ícono del tray: el logo real de la app (fallback: pixel transparente).
+// Ícono del tray: la marca de Omni empaquetada con la app (build/tray.png).
+// Antes se pedía `/logotipo.png` por red, que era el logo de la marca anterior;
+// además así el tray funciona sin conexión (fallback: pixel transparente).
 async function loadTrayIcon() {
     try {
-        const res = await net.fetch(APP_URL + "/logotipo.png");
-        if (res.ok) {
-            const buf = Buffer.from(await res.arrayBuffer());
-            const img = nativeImage.createFromBuffer(buf);
-            if (!img.isEmpty()) return img.resize({ width: 18, height: 18 });
-        }
+        const img = nativeImage.createFromPath(path.join(__dirname, "build", "tray.png"));
+        if (!img.isEmpty()) return img.resize({ width: 18, height: 18 });
     } catch {
         // fallback abajo
     }
