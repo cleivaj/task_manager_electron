@@ -146,6 +146,6 @@ jobs:
           else
             gh release create "$TAG" dist/* \
               --repo "${{ github.repository }}" \
-              --title "Kova $TAG" \
+              --title "Omni $TAG" \
               --generate-notes
           fi
