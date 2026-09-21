@@ -45,7 +45,7 @@ jobs:
       - name: Upload DMGs (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: kova-mac
+          name: omni-mac
           path: dist/*.dmg
           if-no-files-found: error
 
@@ -73,7 +73,7 @@ jobs:
       - name: Upload installer + update metadata (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: kova-win
+          name: omni-win
           path: |
             dist/*.exe
             dist/*.blockmap
@@ -105,7 +105,7 @@ jobs:
       - name: Upload AppImage + update metadata (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: kova-linux
+          name: omni-linux
           path: |
             dist/*.AppImage
             dist/*.AppImage.blockmap

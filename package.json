@@ -1,6 +1,6 @@
 {
   "name": "omni-desktop",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Omni desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
@@ -58,7 +58,7 @@
       "artifactName": "Omni-Setup-${version}.${ext}"
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "target": [
         "AppImage",
         "pacman"
