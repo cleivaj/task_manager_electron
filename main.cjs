@@ -8,7 +8,7 @@ const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, shel
 const path = require("node:path");
 const updater = require("./updater.cjs");
 
-const APP_URL = process.env.KOVA_APP_URL || "https://kova.cesar.wearemateria.com";
+const APP_URL = process.env.KOVA_APP_URL || "https://omnios.pt/";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
 const RELEASES_URL = "https://github.com/cleivaj/task_manager_electron/releases";
 
