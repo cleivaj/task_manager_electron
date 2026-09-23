@@ -1,6 +1,6 @@
 {
   "name": "omni-desktop",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Omni desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
@@ -38,6 +38,7 @@
       "main.cjs",
       "preload.cjs",
       "updater.cjs",
+      "lib/**/*.cjs",
       "build/icon.png",
       "build/tray.png"
     ],
