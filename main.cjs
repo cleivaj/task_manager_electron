@@ -8,7 +8,7 @@ const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, shel
 const path = require("node:path");
 const updater = require("./updater.cjs");
 
-const APP_URL = process.env.KOVA_APP_URL || "https://omnios.pt/";
+const APP_URL = process.env.KOVA_APP_URL || "https://app.omnios.pt/";
 const APP_ORIGIN = () => { try { return new URL(APP_URL).origin; } catch { return APP_URL; } };
 const RELEASES_URL = "https://github.com/cleivaj/task_manager_electron/releases";
 
@@ -31,7 +31,7 @@ let autoUpdateState = null; // { version, phase: "downloading" | "ready" } — a
 
 // Windows: las notificaciones nativas solo aparecen con AppUserModelID.
 if (process.platform === "win32") {
-    app.setAppUserModelId("com.wearemateria.kova");
+    app.setAppUserModelId("pt.omnios");
 }
 
 function isAppUrl(url) {
