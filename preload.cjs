@@ -20,6 +20,13 @@ contextBridge.exposeInMainWorld("desktop", {
     closeTimerWidget: () => ipcRenderer.send("timer-widget:close"),
     setTimerWidgetExpanded: (expanded) => ipcRenderer.send("timer-widget:expand", expanded),
     moveTimerWidget: (dx, dy) => ipcRenderer.send("timer-widget:move", { dx, dy }),
+    // Deep link (OAuth Google): o main avisa por IPC; o renderer ouve e relê o
+    // estado sem recarregar a página. Devolve uma função para cancelar.
+    onDeepLink: (cb) => {
+        const handler = (_e, payload) => cb(payload);
+        ipcRenderer.on("deep-link", handler);
+        return () => ipcRenderer.removeListener("deep-link", handler);
+    },
 });
 
 // Los mismos labels que front/src/modules/notification/domain/entities/Notification.entity.ts

@@ -43,7 +43,9 @@ function handleDeepLink(url) {
     windowManager.showMainWindow();
     // Só o nosso caso conhecido navega; o resto só foca a janela.
     if (url.startsWith(DEEP_LINK_URL)) {
-        windowManager.navigateMainWindow("/profile?google=connected");
+        // Avisa o renderer (sem reload) para reler o estado do Google Calendar.
+        // Se a janela ainda não existir (arranque a frio), faz fallback.
+        windowManager.notifyDeepLink("google-connected", "/profile?google=connected");
     }
 }
 
