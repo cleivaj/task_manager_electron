@@ -32,6 +32,29 @@ const timerWidget = require("./lib/timerWidget.cjs");
 // Antes de whenReady: switches de Chromium y ajustes del SO por plataforma.
 configurePlatform();
 
+// Deep link omni:// — usado pelo callback OAuth do Google Calendar para voltar
+// à app (foca a janela e navega). Registado antes de whenReady: no Linux/Windows
+// o segundo-instance traz a URL nos argumentos; no macOS chega por open-url.
+const DEEP_LINK_PROTOCOL = "omni";
+const DEEP_LINK_URL = `${DEEP_LINK_PROTOCOL}://google-connected`;
+
+function handleDeepLink(url) {
+    if (!url || !url.startsWith(`${DEEP_LINK_PROTOCOL}://`)) return;
+    windowManager.showMainWindow();
+    // Só o nosso caso conhecido navega; o resto só foca a janela.
+    if (url.startsWith(DEEP_LINK_URL)) {
+        windowManager.navigateMainWindow("/profile?google=connected");
+    }
+}
+
+if (process.defaultApp && process.argv.length >= 2) {
+    // Em dev (electron .), o protocolo aponta para o binário do electron + o
+    // caminho do projeto, senão o SO não sabe como abrir o omni://.
+    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, process.execPath, [require("path").resolve(process.argv[1])]);
+} else {
+    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+}
+
 // Quit real (el "Quit Omni" del tray): marca la intención para que el handler de
 // `close` de la ventana no la oculte en vez de cerrarla.
 function quitApp() {
@@ -43,7 +66,21 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
     app.quit();
 } else {
-    app.on("second-instance", () => windowManager.showMainWindow());
+    app.on("second-instance", (_event, argv) => {
+        // Windows/Linux: a URL do deep link chega como argumento.
+        const url = (argv || []).find((a) => typeof a === "string" && a.startsWith(`${DEEP_LINK_PROTOCOL}://`));
+        if (url) {
+            handleDeepLink(url);
+            return;
+        }
+        windowManager.showMainWindow();
+    });
+
+    // macOS: o deep link chega por open-url (a app pode até estar fechada).
+    app.on("open-url", (event, url) => {
+        event.preventDefault();
+        handleDeepLink(url);
+    });
 
     app.whenReady().then(async () => {
         app.isQuitting = false;

@@ -1,6 +1,6 @@
 {
   "name": "omni-desktop",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Omni desktop shell (PoC): thin Electron wrapper around the web app with native notifications, tray and auto-launch.",
   "private": true,
   "author": {
@@ -29,6 +29,14 @@
   "build": {
     "appId": "com.wearemateria.omni",
     "productName": "Omni",
+    "protocols": [
+      {
+        "name": "Omni deep link",
+        "schemes": [
+          "omni"
+        ]
+      }
+    ],
     "publish": {
       "provider": "github",
       "owner": "cleivaj",
