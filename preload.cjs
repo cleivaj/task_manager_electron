@@ -71,11 +71,24 @@ const SHIM = `(() => {
     const FIRST_POLL_DELAY_MS = 5000;
     const RECENT_WINDOW_MS = 120000; // solo tosta lo creado en los últimos 2 min
     const MAX_SEEN = 600;
-    const seen = new Set();
+    // Map id → timestamp (no Set): permite expirar SOLO las entradas viejas en
+    // vez de vaciar todo el buffer (el seen.clear() re-tostaba el poll).
+    const seen = new Map();
 
     function remember(id) {
-        seen.add(id);
-        if (seen.size > MAX_SEEN) seen.clear(); // cota de memoria; la ventana de 2 min evita re-toasts
+        const now = Date.now();
+        // Limpieza perezosa de ids fuera de la ventana reciente.
+        for (const [key, ts] of seen) {
+            if (now - ts > RECENT_WINDOW_MS) seen.delete(key);
+        }
+        // Cota dura: si aún se pasa, elimina los más antiguos (Map preserva
+        // orden de inserción). Nunca vacía todo de golpe.
+        while (seen.size > MAX_SEEN) {
+            const oldest = seen.keys().next().value;
+            if (oldest === undefined) break;
+            seen.delete(oldest);
+        }
+        seen.set(id, now);
     }
 
     // --- Camino 1: bus realtime (SSE de la app) ---
@@ -103,7 +116,10 @@ const SHIM = `(() => {
                 : label.charAt(0).toUpperCase() + label.slice(1);
         }
         if (window.desktop && typeof window.desktop.notify === "function") {
-            window.desktop.notify({ title, body });
+            // notificationId viaja al main process para deduplicar contra el
+            // camino del poll (y viceversa): la misma notificación no debe
+            // producir dos toasts nativos.
+            window.desktop.notify({ title, body, notificationId: id });
         }
     }
 
@@ -162,7 +178,7 @@ const SHIM = `(() => {
                 if (Number.isNaN(created) || created < cutoff) continue;
                 remember(n.id);
                 if (window.desktop && typeof window.desktop.notify === "function") {
-                    window.desktop.notify({ title: n.title || "Omni", body: n.body || "" });
+                    window.desktop.notify({ title: n.title || "Omni", body: n.body || "", notificationId: n.id });
                 }
             }
         } catch {
