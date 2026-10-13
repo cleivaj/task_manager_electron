@@ -1,4 +1,4 @@
-# Omni Desktop (PoC)
+# Omni Desktop (PICO)
 
 Thin Electron shell around the existing web app — **no port, no web changes**.
 
@@ -70,7 +70,7 @@ Builds are unsigned (pilot): testers open with right-click → **Open**, or
 > `macos-latest` runner. The shell itself is pure JS — nothing platform-specific
 > in the code.
 
-## Honest limitations (PoC)
+## Honest limitations (PICO)
 
 - **Not signed**: macOS Gatekeeper / Windows SmartScreen will warn until you add
   signing (Apple Developer $99/yr + notarization; Windows cert ~$200–300/yr).
