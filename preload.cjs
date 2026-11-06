@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("desktop", {
     closeTimerWidget: () => ipcRenderer.send("timer-widget:close"),
     setTimerWidgetExpanded: (expanded) => ipcRenderer.send("timer-widget:expand", expanded),
     moveTimerWidget: (dx, dy) => ipcRenderer.send("timer-widget:move", { dx, dy }),
+    setTimerWidgetHeight: (height) => ipcRenderer.send("timer-widget:height", height),
     // Deep link (OAuth Google): o main avisa por IPC; o renderer ouve e relê o
     // estado sem recarregar a página. Devolve uma função para cancelar.
     onDeepLink: (cb) => {
